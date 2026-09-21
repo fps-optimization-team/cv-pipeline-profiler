@@ -59,222 +59,119 @@ def load_config(path=None):
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
-
-
-# =========================================================
-# 1. 전처리 (Pre-processing)
-# =========================================================
-def preprocess(frame):
+def process_green_circle(frame, config, timer=None):
     """
-    입력 프레임을 검출하기 좋은 형태로 전처리한다.
-
-    - 원본 해상도 유지
-    - 노이즈 감소
-    - BGR → HSV 변환
+    [비전 연산 핵심 파이프라인]
+    입력 프레임에서 초록색 원을 검출하고 Bounding Box 및 텍스트를 렌더링합니다.
+    
+    :param frame: 입력 BGR 이미지 (numpy ndarray)
+    :param config: 설정값 사전 (config.json 데이터)
+    :param timer: StepTimer 객체 (단계별 ms 측정용, 선택 사항)
+    :return: 검출 결과가 그려진 출력 이미지
     """
-
-    # 노이즈 감소
-    blurred = cv2.GaussianBlur(frame, (5, 5), 0)
-
-    # BGR → HSV 변환
+    
+    # =========================================================================
+    # 1. 전처리 (Pre-processing) Phase
+    # =========================================================================
+    if timer:
+        timer.start("preprocess")  # [타이머] 전처리 시작 시간 기록
+        
+    # config.json에서 가우시안 블러 커널 크기 가져오기 (기본값: (5, 5))
+    blur_kernel = tuple(config.get("blur_kernel", [5, 5]))
+    
+    # 노이즈 제거를 위한 Gaussian Blur 적용
+    blurred = cv2.GaussianBlur(frame, blur_kernel, 0)
+    
+    # 색상 공간 변환: BGR -> HSV (색상 추적이 용이한 HSV 공간 사용)
     hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+    
+    if timer:
+        timer.stop("preprocess")  # [타이머] 전처리 종료 시간 기록
 
-    return hsv
+    # =========================================================================
+    # 2. 검출 (Detection) Phase
+    # =========================================================================
+    if timer:
+        timer.start("detection")  # [타이머] 검출 시작 시간 기록
+        
+    # HSV 하한값/상한값 설정 (config.json에서 불러오기)
+    lower_green = np.array(config.get("lower_green", [35, 100, 100]))
+    upper_green = np.array(config.get("upper_green", [85, 255, 255]))
+    
+    # 초록색 범위에 해당하는 영역만 흰색(255), 나머지는 검은색(0) 마스크 생성
+    mask = cv2.inRange(hsv, lower_green, upper_green)
+    
+    if timer:
+        timer.stop("detection")  # [타이머] 검출 종료 시간 기록
 
+    # =========================================================================
+    # 3. 후처리 (Post-processing) Phase
+    # =========================================================================
+    if timer:
+        timer.start("postprocess")  # [타이머] 후처리 시작 시간 기록
+        
+    # 모폴로지 연산에 사용할 사각형 커널 생성
+    morph_kernel_size = tuple(config.get("morph_kernel", [3, 3]))
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, morph_kernel_size)
+    
+    # Morphology Opening: 작은 흰색 점(노이즈) 제거
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    
+    # Morphology Closing: 객체 내부의 검은 구멍 채우기
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    
+    # 이진화 마스크 이미지에서 외곽선(Contour) 추출
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if timer:
+        timer.stop("postprocess")  # [타이머] 후처리 종료 시간 기록
 
-# =========================================================
-# 2. 검출 (Detection)
-# =========================================================
-def detect(hsv):
-    """
-    HSV 이미지에서 초록색 영역을 검출한다.
-    검출된 영역은 흰색, 나머지는 검은색인 mask를 반환한다.
-    """
-
-    # 초록색 HSV 범위
-    lower_green = np.array([40, 50, 50])
-    upper_green = np.array([80, 255, 255])
-
-    # 초록색 영역만 추출
-    mask = cv2.inRange(
-        hsv,
-        lower_green,
-        upper_green
-    )
-
-    return mask
-
-
-# =========================================================
-# 3. 후처리 (Post-processing)
-# =========================================================
-def postprocess(mask):
-    """
-    검출된 mask를 정리하고
-    초록색 물체의 외곽선을 찾는다.
-    """
-
-    # 모폴로지 연산에 사용할 커널
-    kernel = np.ones((5, 5), np.uint8)
-
-    # 작은 노이즈 제거
-    cleaned_mask = cv2.morphologyEx(
-        mask,
-        cv2.MORPH_OPEN,
-        kernel
-    )
-
-    # 끊어진 영역 연결
-    cleaned_mask = cv2.morphologyEx(
-        cleaned_mask,
-        cv2.MORPH_CLOSE,
-        kernel
-    )
-
-    # 외곽선 검출
-    contours, _ = cv2.findContours(
-        cleaned_mask,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE
-    )
-
-    return contours
-
-
-# =========================================================
-# 4. 결과 그리기 (Visualization)
-# =========================================================
-def draw_results(frame, contours, fps=None):
-    """
-    검출된 물체에 Bounding Box를 그리고
-    FPS를 화면에 표시한다.
-    """
-
+    # =========================================================================
+    # 4. 결과 그리기 (Rendering Phase)
+    # =========================================================================
+    if timer:
+        timer.start("draw")  # [타이머] 그리기 시작 시간 기록
+        
+    # 원본 이미지 훼손 방지를 위해 복사본 생성
     output_frame = frame.copy()
-
-    for contour in contours:
-
-        # 너무 작은 영역은 노이즈로 판단하여 제외
-        area = cv2.contourArea(contour)
-
-        if area < 100:
+    
+    # 판단 기준 최소 반지름 (기본값: 10픽셀)
+    min_radius = config.get("min_radius", 10)
+    
+    # 검출된 모든 외곽선(Contour) 후보군 순회
+    for cnt in contours:
+        # 외곽선 둘레 길이 계산
+        perimeter = cv2.arcLength(cnt, True)
+        if perimeter == 0:
             continue
+            
+        # 외곽선 내부 면적 계산
+        area = cv2.contourArea(cnt)
+        
+        # 원형도(Circularity) 계산 공식: 4 * pi * 면적 / (둘레^2) -> 완벽한 원일 때 1.0
+        circularity = 4 * np.pi * (area / (perimeter * perimeter))
+        
+        # 최소 외접원 계산 (중심 좌표 x, y 및 반지름 radius)
+        (x, y), radius = cv2.minEnclosingCircle(cnt)
+        
+        # 조건 검증: 반지름 기준값 이상 + 원형도 0.6 이상인 경우만 '원'으로 인식
+        if radius > min_radius and circularity > 0.6:
+            center = (int(x), int(y))
+            radius = int(radius)
+            
+            # 1) 검출된 원 테두리 그리기 (초록색, 두께 2)
+            cv2.circle(output_frame, center, radius, (0, 255, 0), 2)
+            
+            # 2) Bounding Box 좌표 계산 및 직사각형 그리기 (노란색, 두께 2)
+            x_box, y_box, w_box, h_box = cv2.boundingRect(cnt)
+            cv2.rectangle(output_frame, (x_box, y_box), (x_box + w_box, y_box + h_box), (0, 255, 255), 2)
+            
+            # 3) 상단에 라벨 텍스트 표기
+            cv2.putText(output_frame, "Green Circle", (x_box, y_box - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            
+    if timer:
+        timer.stop("draw")  # [타이머] 그리기 종료 시간 기록
 
-        # Bounding Box 좌표 계산
-        x, y, w, h = cv2.boundingRect(contour)
-
-        # 사각형 그리기
-        cv2.rectangle(
-            output_frame,
-            (x, y),
-            (x + w, y + h),
-            (0, 255, 0),
-            2
-        )
-
-    # FPS 표시
-    if fps is not None:
-        cv2.putText(
-            output_frame,
-            f"FPS: {fps:.1f}",
-            (20, 40),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (0, 255, 0),
-            2,
-            cv2.LINE_AA
-        )
-
+    # 최종 결과 프레임 반환
     return output_frame
-
-
-
-
-# =========================================================
-# 5. 공통 프레임 처리 파이프라인
-# =========================================================
-def process_frame(frame, draw=True):
-    """
-    공통 영상 처리 파이프라인
-
-    전처리
-        ↓
-    초록색 검출
-        ↓
-    후처리
-        ↓
-    결과 그리기
-
-    각 단계의 처리 시간과 FPS도 함께 측정한다.
-    """
-
-    total_start = time.perf_counter()
-
-
-    # -----------------------------------------------------
-    # 1. 전처리
-    # -----------------------------------------------------
-    start = time.perf_counter()
-
-    hsv = preprocess(frame)
-
-    preprocess_ms = (time.perf_counter() - start) * 1000
-
-
-    # -----------------------------------------------------
-    # 2. 검출
-    # -----------------------------------------------------
-    start = time.perf_counter()
-
-    mask = detect(hsv)
-
-    detect_ms = (time.perf_counter() - start) * 1000
-
-
-    # -----------------------------------------------------
-    # 3. 후처리
-    # -----------------------------------------------------
-    start = time.perf_counter()
-
-    contours = postprocess(mask)
-
-    postprocess_ms = (time.perf_counter() - start) * 1000
-
-
-    # -----------------------------------------------------
-    # 전체 처리 시간 및 FPS 계산
-    # -----------------------------------------------------
-    total_time = time.perf_counter() - total_start
-
-    if total_time > 0:
-        fps = 1.0 / total_time
-    else:
-        fps = 0.0
-
-
-    # -----------------------------------------------------
-    # 4. 결과 그리기
-    # -----------------------------------------------------
-    if draw:
-        output_frame = draw_results(
-            frame,
-            contours,
-            fps
-        )
-    else:
-        output_frame = frame.copy()
-
-
-    # -----------------------------------------------------
-    # 성능 측정 결과
-    # -----------------------------------------------------
-    metrics = {
-        "preprocess_ms": preprocess_ms,
-        "detect_ms": detect_ms,
-        "postprocess_ms": postprocess_ms,
-        "total_ms": total_time * 1000,
-        "fps": fps
-    }
-
-
-    return output_frame, contours, metrics

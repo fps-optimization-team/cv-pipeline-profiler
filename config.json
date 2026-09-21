@@ -1,13 +1,14 @@
-
 {
-    "video_paths": {
-        "640x480": "data/sample_640x480.mp4",
-        "1280x720": "data/sample_1280x720.mp4",
-        "1920x1080": "data/sample_1920x1080.mp4"
-    },
-
-    "blur_kernel": 5,
-    "canny_low": 50,
-    "canny_high": 150,
-    "min_area": 200
+  "video_paths": {
+    "640x480": "data/sample_640x480.mp4",
+    "1280x720": "data/sample_1280x720.mp4",
+    "1920x1080": "data/sample_1920x1080.mp4"
+  },
+  "blur_kernel": [5, 5],
+  "lower_green": [35, 100, 100],
+  "upper_green": [85, 255, 255],
+  "morph_kernel": [3, 3],
+  "min_radius": 15,
+  "queue_size": 5,
+  "benchmark_duration_sec": 60
 }
