@@ -3,7 +3,6 @@ import json
 import os
 import time
 from collections import deque
-
 import cv2
 import numpy as np
 
@@ -59,3 +58,188 @@ def load_config(path=None):
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+
+
+
+# =========================================================
+# 1. 전처리 (Pre-processing)
+# =========================================================
+def preprocess(frame):
+    """
+    입력 프레임의 원본 해상도를 유지하면서
+    모델 입력에 필요한 전처리를 수행한다.
+    """
+
+    # 원본 해상도 확인
+    height, width = frame.shape[:2]
+
+    # 노이즈 감소
+    blurred = cv2.GaussianBlur(
+        frame,
+        (5, 5),
+        0
+    )
+
+    # OpenCV BGR → RGB 변환
+    rgb = cv2.cvtColor(
+        blurred,
+        cv2.COLOR_BGR2RGB
+    )
+
+    # 0~255 → 0~1 정규화
+    normalized = rgb.astype(np.float32) / 255.0
+
+    return normalized
+
+
+# =========================================================
+# 2. 후처리 (Post-processing)
+# =========================================================
+def postprocess(raw_preds, orig_shape, conf_thresh=0.5):
+    """
+    모델의 원본 출력값을 실제 검출 결과로 변환한다.
+
+    추후 모델이 정해지면
+    - Confidence Threshold
+    - NMS
+    - 좌표 변환
+    등을 구현한다.
+    """
+
+    # TODO: 실제 모델에 맞게 구현
+    detections = raw_preds
+
+    return detections
+
+
+# =========================================================
+# 3. 결과 그리기 (Visualization)
+# =========================================================
+def draw_results(frame, detections, fps=None):
+    """
+    원본 프레임에 검출 결과와 FPS를 표시한다.
+    """
+
+    output = frame.copy()
+
+    # TODO:
+    # 모델의 detections 구조가 결정되면
+    # Bounding Box 등을 그리는 코드 추가
+
+    if fps is not None:
+        cv2.putText(
+            output,
+            f"FPS: {fps:.1f}",
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 255, 0),
+            2,
+            cv2.LINE_AA
+        )
+
+    return output
+
+
+# =========================================================
+# 4. 공통 프레임 처리 파이프라인
+# =========================================================
+def process_frame(frame, model, conf_threshold=0.5, draw=True):
+    """
+    공통 프레임 처리 파이프라인
+
+    원본 해상도를 유지한 상태에서
+
+    전처리
+      ↓
+    모델 추론
+      ↓
+    후처리
+      ↓
+    결과 그리기
+
+    순서로 처리한다.
+    """
+
+    total_start = time.perf_counter()
+
+    # -----------------------------------------------------
+    # 1. 전처리
+    # -----------------------------------------------------
+    pre_start = time.perf_counter()
+
+    input_tensor = preprocess(frame)
+
+    pre_end = time.perf_counter()
+
+
+    # -----------------------------------------------------
+    # 2. 검출 / AI 추론
+    # -----------------------------------------------------
+    detect_start = time.perf_counter()
+
+    raw_preds = model(input_tensor)
+
+    detect_end = time.perf_counter()
+
+
+    # -----------------------------------------------------
+    # 3. 후처리
+    # -----------------------------------------------------
+    post_start = time.perf_counter()
+
+    detections = postprocess(
+        raw_preds,
+        orig_shape=frame.shape,
+        conf_thresh=conf_threshold
+    )
+
+    post_end = time.perf_counter()
+
+
+    # -----------------------------------------------------
+    # 단계별 처리 시간 계산 (ms)
+    # -----------------------------------------------------
+    preprocess_ms = (pre_end - pre_start) * 1000
+    detect_ms = (detect_end - detect_start) * 1000
+    postprocess_ms = (post_end - post_start) * 1000
+
+
+    # -----------------------------------------------------
+    # 4. 결과 그리기
+    # -----------------------------------------------------
+    output_frame = frame.copy()
+
+    total_end = time.perf_counter()
+
+    total_time = total_end - total_start
+
+    if total_time > 0:
+        fps = 1.0 / total_time
+    else:
+        fps = 0.0
+
+
+    if draw:
+        output_frame = draw_results(
+            output_frame,
+            detections,
+            fps
+        )
+
+
+    # -----------------------------------------------------
+    # 성능 측정 결과
+    # -----------------------------------------------------
+    metrics = {
+        "preprocess_ms": preprocess_ms,
+        "detect_ms": detect_ms,
+        "postprocess_ms": postprocess_ms,
+        "total_ms": total_time * 1000,
+        "fps": fps
+    }
+
+
+    return output_frame, detections, metrics

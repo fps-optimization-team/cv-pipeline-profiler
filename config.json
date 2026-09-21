@@ -1,6 +1,13 @@
+
 {
-  "blur_kernel": 5,
-  "canny_low": 50,
-  "canny_high": 150,
-  "min_area": 200
+    "video_paths": {
+        "640x480": "data/sample_640x480.mp4",
+        "1280x720": "data/sample_1280x720.mp4",
+        "1920x1080": "data/sample_1920x1080.mp4"
+    },
+
+    "blur_kernel": 5,
+    "canny_low": 50,
+    "canny_high": 150,
+    "min_area": 200
 }
