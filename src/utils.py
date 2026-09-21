@@ -61,76 +61,121 @@ def load_config(path=None):
 
 
 
-
-
 # =========================================================
 # 1. 전처리 (Pre-processing)
 # =========================================================
 def preprocess(frame):
     """
-    입력 프레임의 원본 해상도를 유지하면서
-    모델 입력에 필요한 전처리를 수행한다.
-    """
+    입력 프레임을 검출하기 좋은 형태로 전처리한다.
 
-    # 원본 해상도 확인
-    height, width = frame.shape[:2]
+    - 원본 해상도 유지
+    - 노이즈 감소
+    - BGR → HSV 변환
+    """
 
     # 노이즈 감소
-    blurred = cv2.GaussianBlur(
-        frame,
-        (5, 5),
-        0
+    blurred = cv2.GaussianBlur(frame, (5, 5), 0)
+
+    # BGR → HSV 변환
+    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+
+    return hsv
+
+
+# =========================================================
+# 2. 검출 (Detection)
+# =========================================================
+def detect(hsv):
+    """
+    HSV 이미지에서 초록색 영역을 검출한다.
+    검출된 영역은 흰색, 나머지는 검은색인 mask를 반환한다.
+    """
+
+    # 초록색 HSV 범위
+    lower_green = np.array([40, 50, 50])
+    upper_green = np.array([80, 255, 255])
+
+    # 초록색 영역만 추출
+    mask = cv2.inRange(
+        hsv,
+        lower_green,
+        upper_green
     )
 
-    # OpenCV BGR → RGB 변환
-    rgb = cv2.cvtColor(
-        blurred,
-        cv2.COLOR_BGR2RGB
+    return mask
+
+
+# =========================================================
+# 3. 후처리 (Post-processing)
+# =========================================================
+def postprocess(mask):
+    """
+    검출된 mask를 정리하고
+    초록색 물체의 외곽선을 찾는다.
+    """
+
+    # 모폴로지 연산에 사용할 커널
+    kernel = np.ones((5, 5), np.uint8)
+
+    # 작은 노이즈 제거
+    cleaned_mask = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_OPEN,
+        kernel
     )
 
-    # 0~255 → 0~1 정규화
-    normalized = rgb.astype(np.float32) / 255.0
+    # 끊어진 영역 연결
+    cleaned_mask = cv2.morphologyEx(
+        cleaned_mask,
+        cv2.MORPH_CLOSE,
+        kernel
+    )
 
-    return normalized
+    # 외곽선 검출
+    contours, _ = cv2.findContours(
+        cleaned_mask,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE
+    )
 
-
-# =========================================================
-# 2. 후처리 (Post-processing)
-# =========================================================
-def postprocess(raw_preds, orig_shape, conf_thresh=0.5):
-    """
-    모델의 원본 출력값을 실제 검출 결과로 변환한다.
-
-    추후 모델이 정해지면
-    - Confidence Threshold
-    - NMS
-    - 좌표 변환
-    등을 구현한다.
-    """
-
-    # TODO: 실제 모델에 맞게 구현
-    detections = raw_preds
-
-    return detections
+    return contours
 
 
 # =========================================================
-# 3. 결과 그리기 (Visualization)
+# 4. 결과 그리기 (Visualization)
 # =========================================================
-def draw_results(frame, detections, fps=None):
+def draw_results(frame, contours, fps=None):
     """
-    원본 프레임에 검출 결과와 FPS를 표시한다.
+    검출된 물체에 Bounding Box를 그리고
+    FPS를 화면에 표시한다.
     """
 
-    output = frame.copy()
+    output_frame = frame.copy()
 
-    # TODO:
-    # 모델의 detections 구조가 결정되면
-    # Bounding Box 등을 그리는 코드 추가
+    for contour in contours:
 
+        # 너무 작은 영역은 노이즈로 판단하여 제외
+        area = cv2.contourArea(contour)
+
+        if area < 100:
+            continue
+
+        # Bounding Box 좌표 계산
+        x, y, w, h = cv2.boundingRect(contour)
+
+        # 사각형 그리기
+        cv2.rectangle(
+            output_frame,
+            (x, y),
+            (x + w, y + h),
+            (0, 255, 0),
+            2
+        )
+
+    # FPS 표시
     if fps is not None:
         cv2.putText(
-            output,
+            output_frame,
             f"FPS: {fps:.1f}",
             (20, 40),
             cv2.FONT_HERSHEY_SIMPLEX,
@@ -140,81 +185,66 @@ def draw_results(frame, detections, fps=None):
             cv2.LINE_AA
         )
 
-    return output
+    return output_frame
+
+
 
 
 # =========================================================
-# 4. 공통 프레임 처리 파이프라인
+# 5. 공통 프레임 처리 파이프라인
 # =========================================================
-def process_frame(frame, model, conf_threshold=0.5, draw=True):
+def process_frame(frame, draw=True):
     """
-    공통 프레임 처리 파이프라인
-
-    원본 해상도를 유지한 상태에서
+    공통 영상 처리 파이프라인
 
     전처리
-      ↓
-    모델 추론
-      ↓
+        ↓
+    초록색 검출
+        ↓
     후처리
-      ↓
+        ↓
     결과 그리기
 
-    순서로 처리한다.
+    각 단계의 처리 시간과 FPS도 함께 측정한다.
     """
 
     total_start = time.perf_counter()
 
+
     # -----------------------------------------------------
     # 1. 전처리
     # -----------------------------------------------------
-    pre_start = time.perf_counter()
+    start = time.perf_counter()
 
-    input_tensor = preprocess(frame)
+    hsv = preprocess(frame)
 
-    pre_end = time.perf_counter()
+    preprocess_ms = (time.perf_counter() - start) * 1000
 
 
     # -----------------------------------------------------
-    # 2. 검출 / AI 추론
+    # 2. 검출
     # -----------------------------------------------------
-    detect_start = time.perf_counter()
+    start = time.perf_counter()
 
-    raw_preds = model(input_tensor)
+    mask = detect(hsv)
 
-    detect_end = time.perf_counter()
+    detect_ms = (time.perf_counter() - start) * 1000
 
 
     # -----------------------------------------------------
     # 3. 후처리
     # -----------------------------------------------------
-    post_start = time.perf_counter()
+    start = time.perf_counter()
 
-    detections = postprocess(
-        raw_preds,
-        orig_shape=frame.shape,
-        conf_thresh=conf_threshold
-    )
+    contours = postprocess(mask)
 
-    post_end = time.perf_counter()
+    postprocess_ms = (time.perf_counter() - start) * 1000
 
 
     # -----------------------------------------------------
-    # 단계별 처리 시간 계산 (ms)
+    # 전체 처리 시간 및 FPS 계산
     # -----------------------------------------------------
-    preprocess_ms = (pre_end - pre_start) * 1000
-    detect_ms = (detect_end - detect_start) * 1000
-    postprocess_ms = (post_end - post_start) * 1000
-
-
-    # -----------------------------------------------------
-    # 4. 결과 그리기
-    # -----------------------------------------------------
-    output_frame = frame.copy()
-
-    total_end = time.perf_counter()
-
-    total_time = total_end - total_start
+    total_time = time.perf_counter() - total_start
 
     if total_time > 0:
         fps = 1.0 / total_time
@@ -222,12 +252,17 @@ def process_frame(frame, model, conf_threshold=0.5, draw=True):
         fps = 0.0
 
 
+    # -----------------------------------------------------
+    # 4. 결과 그리기
+    # -----------------------------------------------------
     if draw:
         output_frame = draw_results(
-            output_frame,
-            detections,
+            frame,
+            contours,
             fps
         )
+    else:
+        output_frame = frame.copy()
 
 
     # -----------------------------------------------------
@@ -242,4 +277,4 @@ def process_frame(frame, model, conf_threshold=0.5, draw=True):
     }
 
 
-    return output_frame, detections, metrics
+    return output_frame, contours, metrics
