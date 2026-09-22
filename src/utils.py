@@ -51,6 +51,56 @@ class FPSMeter:
         return len(self.intervals) / total if total > 0 else 0.0
 
 
+class StepTimer:
+    """파이프라인의 각 단계별 처리 시간을 ms 단위로 측정하는 클래스"""
+
+    def __init__(self):
+        # 각 단계의 시작 시간을 저장
+        self.start_times = {}
+
+        # 각 단계에서 측정된 시간들을 저장
+        self.times = {}
+
+    def start(self, name):
+        """name 단계의 시간 측정을 시작한다."""
+        self.start_times[name] = time.perf_counter()
+
+    def stop(self, name):
+        """name 단계의 시간 측정을 종료하고 걸린 시간을 ms로 저장한다."""
+
+        # 시작 시간이 없는 단계라면 측정하지 않음
+        if name not in self.start_times:
+            return
+
+        end_time = time.perf_counter()
+
+        elapsed_ms = (
+            end_time - self.start_times[name]
+        ) * 1000
+
+        # 처음 측정하는 단계라면 빈 리스트 생성
+        if name not in self.times:
+            self.times[name] = []
+
+        # 측정된 시간을 리스트에 추가
+        self.times[name].append(elapsed_ms)
+
+    def average(self, name):
+        """해당 단계의 평균 처리 시간을 ms 단위로 반환한다."""
+
+        values = self.times.get(name, [])
+
+        if len(values) == 0:
+            return 0.0
+
+        return sum(values) / len(values)
+
+    def reset(self):
+        """저장된 모든 측정값을 초기화한다."""
+        self.start_times.clear()
+        self.times.clear()
+
+
 def load_config(path=None):
     """조정할 값들을 config.json에서 읽어 딕셔너리로 돌려준다.
     path를 주지 않으면 프로젝트 폴더(src의 상위)의 config.json을 읽는다."""
@@ -58,6 +108,7 @@ def load_config(path=None):
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
 
 def process_green_circle(frame, config, timer=None):
     """
@@ -69,6 +120,7 @@ def process_green_circle(frame, config, timer=None):
     :param timer: StepTimer 객체 (단계별 ms 측정용, 선택 사항)
     :return: 검출 결과가 그려진 출력 이미지
     """
+
     
     # =========================================================================
     # 1. 전처리 (Pre-processing) Phase
