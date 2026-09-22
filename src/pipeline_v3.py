@@ -10,7 +10,6 @@ sys.path.append(str(PROJECT_ROOT))
 import cv2
 from src.utils import StepTimer, FPSMeter, load_config, process_green_circle_v3
 
-
 def run_pipeline_v3(video_source=0, config_path="config.json", show_window=True):
     """
     [V3 Optimized 파이프라인 메인 실행 함수]
@@ -20,7 +19,7 @@ def run_pipeline_v3(video_source=0, config_path="config.json", show_window=True)
     :param show_window: 화면 렌더링 출력 여부
     """
     # [최적화] OpenCV 내 CPU 멀티스레드 세팅 (불필요한 스레드 오버헤드 방지)
-    cv2.setNumThreads(4)
+    cv2.setNumThreads(1)
 
     # 유틸리티 객체 및 설정 불러오기
     config = load_config(config_path)
