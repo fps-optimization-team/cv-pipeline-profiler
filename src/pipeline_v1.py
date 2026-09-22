@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# team_project 루트 등록
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 import cv2
 import time
 from src.utils import StepTimer, FPSMeter, load_config, process_green_circle
@@ -66,9 +72,17 @@ def run_pipeline_v1(video_source=0, config_path="config.json", show_window=True)
 
         print("[Pipeline V1] 종료되었습니다.")
         # 연산 단계별 평균 소요시간(ms) 출력 (디버깅용)
-        avg_times = timer.get_avg_times()
-        print("[V1 Step Times (ms)]", avg_times)
+        avg_times = {name: timer.average(name) for name in timer.start_times}
+        print("\n" + "="*40)
+        print("    [V1 Baseline - Step Execution Times]")
+        print("="*40)
+        for step, ms in avg_times.items():
+            print(f"  • {step:<12}: {ms:6.2f} ms")
+        print("="*40)
 
-    if __name__ == "__main__":
-        # 단독 실행 테스트용 (웹캠 0번 기준)
-        run_pipeline_v1(video_source=0, config_path="config.json", show_window=True)
+if __name__ == "__main__":
+    # 단독 실행 테스트용 (웹캠 0번 기준)
+    project_root = Path(__file__).resolve().parent.parent
+    sample_path = str(project_root / "data" / "sample_640x480.mp4")
+    config_path = str(project_root / "config.json")
+    run_pipeline_v1(sample_path, config_path=config_path, show_window=True)
