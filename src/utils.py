@@ -131,11 +131,31 @@ def process_green_circle(frame, config, timer=None):
     # config.json에서 가우시안 블러 커널 크기 가져오기 (기본값: (5, 5))
     blur_kernel = tuple(config.get("blur_kernel", [5, 5]))
     
-    # 노이즈 제거를 위한 Gaussian Blur 적용
-    blurred = cv2.GaussianBlur(frame, blur_kernel, 0)
-    
-    # 색상 공간 변환: BGR -> HSV (색상 추적이 용이한 HSV 공간 사용)
-    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+    # 노이즈 제거를 위한 Gaussian Blur 적용 및 측정
+    if timer:
+        timer.start("blur")
+
+    blurred = cv2.GaussianBlur(
+        frame,
+        blur_kernel,
+        0
+    )
+
+    if timer:
+        timer.stop("blur")
+
+
+    # 색상 공간 변환 및 측정: BGR -> HSV (색상 추적이 용이한 HSV 공간 사용)
+    if timer:
+        timer.start("hsv_convert")
+
+    hsv = cv2.cvtColor(
+        blurred,
+        cv2.COLOR_BGR2HSV
+    )
+
+    if timer:
+        timer.stop("hsv_convert")
     
     if timer:
         timer.stop("preprocess")  # [타이머] 전처리 종료 시간 기록
@@ -151,32 +171,90 @@ def process_green_circle(frame, config, timer=None):
     upper_green = np.array(config.get("upper_green", [85, 255, 255]))
     
     # 초록색 범위에 해당하는 영역만 흰색(255), 나머지는 검은색(0) 마스크 생성
+    if timer:
+        timer.start("in_range")
     mask = cv2.inRange(hsv, lower_green, upper_green)
+    if timer:
+        timer.stop("in_range")
     
     if timer:
         timer.stop("detection")  # [타이머] 검출 종료 시간 기록
 
-    # =========================================================================
+   
+    # ============================================================
     # 3. 후처리 (Post-processing) Phase
-    # =========================================================================
+    # ============================================================
+
+    # Postprocess 전체 측정 시작
     if timer:
-        timer.start("postprocess")  # [타이머] 후처리 시작 시간 기록
-        
-    # 모폴로지 연산에 사용할 사각형 커널 생성
-    morph_kernel_size = tuple(config.get("morph_kernel", [3, 3]))
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, morph_kernel_size)
-    
-    # Morphology Opening: 작은 흰색 점(노이즈) 제거
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    
-    # Morphology Closing: 객체 내부의 검은 구멍 채우기
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    
-    # 이진화 마스크 이미지에서 외곽선(Contour) 추출
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+        timer.start("postprocess")
+
+
+    # 모폴로지 연산에 사용할 커널 생성
+    morph_kernel_size = tuple(
+        config.get("morph_kernel", [3, 3])
+    )
+
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT,
+        morph_kernel_size
+    )
+
+
+    # ------------------------------------------------------------
+    # 3-1. Morphology Opening 측정
+    # ------------------------------------------------------------
+
     if timer:
-        timer.stop("postprocess")  # [타이머] 후처리 종료 시간 기록
+        timer.start("morph_open")
+
+    mask = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_OPEN,
+        kernel
+    )
+
+    if timer:
+        timer.stop("morph_open")
+
+
+    # ------------------------------------------------------------
+    # 3-2. Morphology Closing 측정
+    # ------------------------------------------------------------
+
+    if timer:
+        timer.start("morph_close")
+
+    mask = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_CLOSE,
+        kernel
+    )
+
+    if timer:
+        timer.stop("morph_close")
+
+
+    # ------------------------------------------------------------
+    # 3-3. Contour 검출 측정
+    # ------------------------------------------------------------
+
+    if timer:
+        timer.start("find_contours")
+
+    contours, _ = cv2.findContours(
+        mask,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    if timer:
+        timer.stop("find_contours")
+
+
+    # Postprocess 전체 측정 종료
+    if timer:
+        timer.stop("postprocess")
 
     # =========================================================================
     # 4. 결과 그리기 (Rendering Phase)
