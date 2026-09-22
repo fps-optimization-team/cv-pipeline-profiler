@@ -56,8 +56,6 @@ class FPSMeter:
         total = sum(self.intervals)
         return len(self.intervals) / total if total > 0 else 0.0
 
-<<<<<<< HEAD
-=======
 class StepTimer:
     """파이프라인의 각 단계별 처리 시간을 ms 단위로 측정하는 클래스"""
 
@@ -107,7 +105,6 @@ class StepTimer:
         self.start_times.clear()
         self.times.clear()
 
->>>>>>> 22a428b8d3dcf3a2c8ee7cf90c6a1fc0667fc233
 
 def load_config(path=None):
     """조정할 값들을 config.json에서 읽어 딕셔너리로 돌려준다.
