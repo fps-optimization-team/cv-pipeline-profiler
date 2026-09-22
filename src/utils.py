@@ -51,56 +51,6 @@ class FPSMeter:
         return len(self.intervals) / total if total > 0 else 0.0
 
 
-class StepTimer:
-    """파이프라인의 각 단계별 처리 시간을 ms 단위로 측정하는 클래스"""
-
-    def __init__(self):
-        # 각 단계의 시작 시간을 저장
-        self.start_times = {}
-
-        # 각 단계에서 측정된 시간들을 저장
-        self.times = {}
-
-    def start(self, name):
-        """name 단계의 시간 측정을 시작한다."""
-        self.start_times[name] = time.perf_counter()
-
-    def stop(self, name):
-        """name 단계의 시간 측정을 종료하고 걸린 시간을 ms로 저장한다."""
-
-        # 시작 시간이 없는 단계라면 측정하지 않음
-        if name not in self.start_times:
-            return
-
-        end_time = time.perf_counter()
-
-        elapsed_ms = (
-            end_time - self.start_times[name]
-        ) * 1000
-
-        # 처음 측정하는 단계라면 빈 리스트 생성
-        if name not in self.times:
-            self.times[name] = []
-
-        # 측정된 시간을 리스트에 추가
-        self.times[name].append(elapsed_ms)
-
-    def average(self, name):
-        """해당 단계의 평균 처리 시간을 ms 단위로 반환한다."""
-
-        values = self.times.get(name, [])
-
-        if len(values) == 0:
-            return 0.0
-
-        return sum(values) / len(values)
-
-    def reset(self):
-        """저장된 모든 측정값을 초기화한다."""
-        self.start_times.clear()
-        self.times.clear()
-
-
 def load_config(path=None):
     """조정할 값들을 config.json에서 읽어 딕셔너리로 돌려준다.
     path를 주지 않으면 프로젝트 폴더(src의 상위)의 config.json을 읽는다."""
@@ -108,7 +58,6 @@ def load_config(path=None):
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config.json")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
-
 
 def process_green_circle(frame, config, timer=None):
     """
@@ -120,7 +69,6 @@ def process_green_circle(frame, config, timer=None):
     :param timer: StepTimer 객체 (단계별 ms 측정용, 선택 사항)
     :return: 검출 결과가 그려진 출력 이미지
     """
-
     
     # =========================================================================
     # 1. 전처리 (Pre-processing) Phase
@@ -131,31 +79,11 @@ def process_green_circle(frame, config, timer=None):
     # config.json에서 가우시안 블러 커널 크기 가져오기 (기본값: (5, 5))
     blur_kernel = tuple(config.get("blur_kernel", [5, 5]))
     
-    # 노이즈 제거를 위한 Gaussian Blur 적용 및 측정
-    if timer:
-        timer.start("blur")
-
-    blurred = cv2.GaussianBlur(
-        frame,
-        blur_kernel,
-        0
-    )
-
-    if timer:
-        timer.stop("blur")
-
-
-    # 색상 공간 변환 및 측정: BGR -> HSV (색상 추적이 용이한 HSV 공간 사용)
-    if timer:
-        timer.start("hsv_convert")
-
-    hsv = cv2.cvtColor(
-        blurred,
-        cv2.COLOR_BGR2HSV
-    )
-
-    if timer:
-        timer.stop("hsv_convert")
+    # 노이즈 제거를 위한 Gaussian Blur 적용
+    blurred = cv2.GaussianBlur(frame, blur_kernel, 0)
+    
+    # 색상 공간 변환: BGR -> HSV (색상 추적이 용이한 HSV 공간 사용)
+    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
     
     if timer:
         timer.stop("preprocess")  # [타이머] 전처리 종료 시간 기록
@@ -171,90 +99,32 @@ def process_green_circle(frame, config, timer=None):
     upper_green = np.array(config.get("upper_green", [85, 255, 255]))
     
     # 초록색 범위에 해당하는 영역만 흰색(255), 나머지는 검은색(0) 마스크 생성
-    if timer:
-        timer.start("in_range")
     mask = cv2.inRange(hsv, lower_green, upper_green)
-    if timer:
-        timer.stop("in_range")
     
     if timer:
         timer.stop("detection")  # [타이머] 검출 종료 시간 기록
 
-   
-    # ============================================================
+    # =========================================================================
     # 3. 후처리 (Post-processing) Phase
-    # ============================================================
-
-    # Postprocess 전체 측정 시작
+    # =========================================================================
     if timer:
-        timer.start("postprocess")
-
-
-    # 모폴로지 연산에 사용할 커널 생성
-    morph_kernel_size = tuple(
-        config.get("morph_kernel", [3, 3])
-    )
-
-    kernel = cv2.getStructuringElement(
-        cv2.MORPH_RECT,
-        morph_kernel_size
-    )
-
-
-    # ------------------------------------------------------------
-    # 3-1. Morphology Opening 측정
-    # ------------------------------------------------------------
-
+        timer.start("postprocess")  # [타이머] 후처리 시작 시간 기록
+        
+    # 모폴로지 연산에 사용할 사각형 커널 생성
+    morph_kernel_size = tuple(config.get("morph_kernel", [3, 3]))
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, morph_kernel_size)
+    
+    # Morphology Opening: 작은 흰색 점(노이즈) 제거
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    
+    # Morphology Closing: 객체 내부의 검은 구멍 채우기
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    
+    # 이진화 마스크 이미지에서 외곽선(Contour) 추출
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
     if timer:
-        timer.start("morph_open")
-
-    mask = cv2.morphologyEx(
-        mask,
-        cv2.MORPH_OPEN,
-        kernel
-    )
-
-    if timer:
-        timer.stop("morph_open")
-
-
-    # ------------------------------------------------------------
-    # 3-2. Morphology Closing 측정
-    # ------------------------------------------------------------
-
-    if timer:
-        timer.start("morph_close")
-
-    mask = cv2.morphologyEx(
-        mask,
-        cv2.MORPH_CLOSE,
-        kernel
-    )
-
-    if timer:
-        timer.stop("morph_close")
-
-
-    # ------------------------------------------------------------
-    # 3-3. Contour 검출 측정
-    # ------------------------------------------------------------
-
-    if timer:
-        timer.start("find_contours")
-
-    contours, _ = cv2.findContours(
-        mask,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE
-    )
-
-    if timer:
-        timer.stop("find_contours")
-
-
-    # Postprocess 전체 측정 종료
-    if timer:
-        timer.stop("postprocess")
+        timer.stop("postprocess")  # [타이머] 후처리 종료 시간 기록
 
     # =========================================================================
     # 4. 결과 그리기 (Rendering Phase)
