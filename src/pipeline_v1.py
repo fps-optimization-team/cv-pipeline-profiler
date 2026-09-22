@@ -37,7 +37,7 @@ def run_pipeline_v1(video_source=0, config_path="config.json", show_window=True)
 
             # 4. FPS 및 프레임 드롭률 업데이트
             fps_meter.tick()
-            current_fps = fps_meter.getfps()
+            current_fps = fps_meter.get_fps()
 
             # 5. 실시간 화면 렌더링 (FPS 및 연산 시간 표기) 
             if show_window:
@@ -68,7 +68,7 @@ def run_pipeline_v1(video_source=0, config_path="config.json", show_window=True)
         # 연산 단계별 평균 소요시간(ms) 출력 (디버깅용)
         avg_times = timer.get_avg_times()
         print("[V1 Step Times (ms)]", avg_times)
-        
+
     if __name__ == "__main__":
         # 단독 실행 테스트용 (웹캠 0번 기준)
         run_pipeline_v1(video_source=0, config_path="config.json", show_window=True)
