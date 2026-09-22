@@ -1,8 +1,11 @@
 import sys
 from pathlib import Path
 
-# team_project 루트 등록
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+# =============================================================================
+# 프로젝트 루트 경로 등록
+# =============================================================================
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(PROJECT_ROOT))
 
 import cv2
 import time
@@ -83,6 +86,6 @@ def run_pipeline_v1(video_source=0, config_path="config.json", show_window=True)
 if __name__ == "__main__":
     # 단독 실행 테스트용 (웹캠 0번 기준)
     project_root = Path(__file__).resolve().parent.parent
-    sample_path = str(project_root / "data" / "sample_640x480.mp4")
+    sample_path = str(project_root / "data" / "sample_1920x1080.mp4")
     config_path = str(project_root / "config.json")
     run_pipeline_v1(sample_path, config_path=config_path, show_window=True)

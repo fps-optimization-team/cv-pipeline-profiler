@@ -9,6 +9,7 @@
   "upper_green": [85, 255, 255],
   "morph_kernel": [3, 3],
   "min_radius": 15,
+  "skip_interval": 2,
   "queue_size": 5,
   "benchmark_duration_sec": 60
 }
