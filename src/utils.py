@@ -44,12 +44,17 @@ class FPSMeter:
         self.last = time.perf_counter()
 
     def tick(self):
+        """프레임 시간을 새로 측정하고 FPS를 반환한다."""
         now = time.perf_counter()
         self.intervals.append(now - self.last)
         self.last = now
+
+        return self.get_fps()
+
+    def get_fps(self):
+        """시간을 새로 측정하지 않고 현재 FPS 값만 반환한다."""
         total = sum(self.intervals)
         return len(self.intervals) / total if total > 0 else 0.0
-
 
 class StepTimer:
     """파이프라인의 각 단계별 처리 시간을 ms 단위로 측정하는 클래스"""
