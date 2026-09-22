@@ -8,7 +8,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
 import cv2
-import time
 from src.utils import StepTimer, FPSMeter, load_config, process_green_circle
 
 def run_pipeline_v1(video_source=0, config_path="config.json", show_window=True):
