@@ -37,14 +37,13 @@ def frame_producer(cap, frame_queue, stop_event):
         if not ret:
             break
 
-        try:
-            frame_queue.put(frame, timeout=0.1)
-
-        except queue.Full:
-            # Queue가 가득 차 있으면 현재 프레임은 건너뜀
-            pass
+        # Queue가 가득 차면 공간이 생길 때까지 기다림
+        # 벤치마크에서는 프레임을 버리지 않음
+        frame_queue.put(frame)
 
     stop_event.set()
+
+
 
 
 # =============================================================================
@@ -111,7 +110,7 @@ def run_pipeline_v2(
 
             except queue.Empty:
 
-                if stop_event.is_set():
+                if stop_event.is_set() and frame_queue.empty():
                     break
 
                 continue
@@ -182,6 +181,10 @@ def run_pipeline_v2(
             print(f"  • {step:<12}: {ms:6.2f} ms")
 
         print("=" * 40)
+    return {
+    "fps": fps_meter.get_fps(),
+    "avg_times": avg_times
+    }
 
 
 # =============================================================================
@@ -206,3 +209,4 @@ if __name__ == "__main__":
         config_path=config_path,
         show_window=True
     )
+

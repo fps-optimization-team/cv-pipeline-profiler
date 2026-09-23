@@ -93,6 +93,10 @@ def run_pipeline_v3(video_source=0, config_path="config.json", show_window=True)
         for step, ms in avg_times.items():
             print(f"  • {step:<12}: {ms:6.2f} ms")
         print("=" * 40)
+    return {
+    "fps": fps_meter.get_fps(),
+    "avg_times": avg_times
+    }
 
 
 if __name__ == "__main__":

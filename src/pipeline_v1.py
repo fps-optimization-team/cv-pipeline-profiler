@@ -81,6 +81,11 @@ def run_pipeline_v1(video_source=0, config_path="config.json", show_window=True)
             print(f"  • {step:<12}: {ms:6.2f} ms")
         print("="*40)
 
+    return {
+    "fps": fps_meter.get_fps(),
+    "avg_times": avg_times
+    }
+
 if __name__ == "__main__":
     # 단독 실행 테스트용 (웹캠 0번 기준)
     project_root = Path(__file__).resolve().parent.parent
