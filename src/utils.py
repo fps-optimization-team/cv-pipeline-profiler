@@ -281,8 +281,9 @@ def process_green_circle_v3(
     # -------------------------------------------------------------------------
     # [최적화 3] N-Frame Skip 판별
     # -------------------------------------------------------------------------
+    # [보완] last_results가 빈 리스트([])인 경우에도 강제 검출 수행
     if use_frame_skip:
-        should_detect = (frame_idx % skip_interval == 0) or (last_results is None)
+        should_detect = (frame_idx % skip_interval == 0) or (last_results is None) or (len(last_results) == 0)
     else:
         should_detect = True  # 매 프레임 검출 수행
 
@@ -302,7 +303,9 @@ def process_green_circle_v3(
         if use_roi and last_results and len(last_results) > 0:
             mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
             xb, yb, wb, hb = last_results[0]["bbox_scaled"]
-            margin = int(20 * curr_scale) # 축소 비율에 맞춰 마진 설정
+            
+            # [보완] 빠르게 이동하는 객체 놓침 방지를 위해 마진 확장 (20 -> 50)
+            margin = int(50 * curr_scale) # 축소 비율에 맞춰 마진 설정
             h_img, w_img = hsv.shape[:2]
 
             # 이미지 경계 초과 방지
@@ -355,7 +358,8 @@ def process_green_circle_v3(
             timer.stop("postprocess")
     else:
         # N-Frame Skip: 무거운 연산 건너뛰고 이전 검출 결과 그대로 사용
-        detected_circles = last_results
+        # [보완] last_results가 None일 경우 빈 리스트로 대치하여 TypeError 방지
+        detected_circles = last_results if last_results is not None else []
 
     # -------------------------------------------------------------------------
     # Phase 4. 시각화 (원본 크기 좌표 복원 및 렌더링)
