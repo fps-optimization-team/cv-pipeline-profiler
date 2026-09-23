@@ -58,14 +58,13 @@ def run_pipeline_v1(video_source=0, config_path="config.json", show_window=True)
                     0.8,
                     (0 ,255 ,0),
                     2
-            )
+                )
+                # 6. 결과 출력
+                cv2.imshow("Green Circle Detection - V1 (Baseline) ", output_frame)
 
-            # 6. 결과 출력
-            cv2.imshow("Green Circle Detection - V1 (Baseline) ", output_frame)
-
-            # 7.'q' 키 입력 시 루프 탈출
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+                # 7.'q' 키 입력 시 루프 탈출
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
     finally:
         # 자원 해제 및 정리
         cap.release()
