@@ -13,10 +13,7 @@ from src.utils import StepTimer, FPSMeter, load_config, process_green_circle_v3
 def run_pipeline_v3(video_source=0, config_path="config.json", show_window=True):
     """
     [V3 Optimized 파이프라인 메인 실행 함수]
-    
-    :param video_source: 비디오 파일 경로 또는 카메라 디바이스 인덱스
-    :param config_path: 설정 파일(config.json) 경로
-    :param show_window: 화면 렌더링 출력 여부
+    (프로젝트 요구사항: 인위적 대기시간 없이 최대 연산 FPS 측정)
     """
     # [최적화] OpenCV 내 CPU 멀티스레드 세팅 (불필요한 스레드 오버헤드 방지)
     cv2.setNumThreads(1)
@@ -71,7 +68,7 @@ def run_pipeline_v3(video_source=0, config_path="config.json", show_window=True)
                 )
                 cv2.imshow("Green Circle Detection - V3 (Optimized)", output_frame)
 
-                # 'q' 키 누를 시 안전하게 종료
+                # 최소 GUI 렌더링 딜레이만 부여 (최대 처리 속도 측정)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
@@ -85,7 +82,6 @@ def run_pipeline_v3(video_source=0, config_path="config.json", show_window=True)
 
         print("[Pipeline V3] 파이프라인이 안전하게 종료되었습니다.")
 
-        # 단계별 평균 소요시간(ms) 가독성 있게 출력
         avg_times = {name: timer.average(name) for name in timer.start_times}
         print("\n" + "=" * 40)
         print("    [V3 Optimized - Step Execution Times]")
@@ -93,16 +89,13 @@ def run_pipeline_v3(video_source=0, config_path="config.json", show_window=True)
         for step, ms in avg_times.items():
             print(f"  • {step:<12}: {ms:6.2f} ms")
         print("=" * 40)
+
     return {
-    "fps": fps_meter.get_fps(),
-    "avg_times": avg_times
+        "fps": fps_meter.get_fps(),
+        "avg_times": avg_times
     }
 
-
 if __name__ == "__main__":
-    # 실행에 필요한 절대 경로 설정
-    sample_path = str(PROJECT_ROOT / "data" / "sample_1920x1080.mp4")
+    sample_path = str(PROJECT_ROOT / "data" / "tennis_sample_1920x1080.mp4")
     config_path = str(PROJECT_ROOT / "config.json")
-
-    # V3 메인 파이프라인 단독 실행
     run_pipeline_v3(sample_path, config_path=config_path, show_window=True)

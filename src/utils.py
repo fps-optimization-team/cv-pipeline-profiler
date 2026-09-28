@@ -281,7 +281,6 @@ def process_green_circle_v3(
     # -------------------------------------------------------------------------
     # [최적화 3] N-Frame Skip 판별
     # -------------------------------------------------------------------------
-    # [보완] last_results가 빈 리스트([])인 경우에도 강제 검출 수행
     if use_frame_skip:
         should_detect = (frame_idx % skip_interval == 0) or (last_results is None) or (len(last_results) == 0)
     else:
@@ -304,8 +303,8 @@ def process_green_circle_v3(
             mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
             xb, yb, wb, hb = last_results[0]["bbox_scaled"]
             
-            # [보완] 빠르게 이동하는 객체 놓침 방지를 위해 마진 확장 (20 -> 50)
-            margin = int(50 * curr_scale) # 축소 비율에 맞춰 마진 설정
+            # 빠르게 이동하는 공의 놓침 방지를 위해 마진 여유 확보 (80px)
+            margin = int(80 * curr_scale)
             h_img, w_img = hsv.shape[:2]
 
             # 이미지 경계 초과 방지
@@ -336,29 +335,42 @@ def process_green_circle_v3(
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         min_radius = config.get("min_radius", 10) * curr_scale
 
+        best_candidate = None
+        max_area = 0
+
         for cnt in contours:
-            perimeter = cv2.arcLength(cnt, True)
-            if perimeter == 0:
+            area = cv2.contourArea(cnt)
+            
+            # 노이즈 수준의 자잘한 면적 제외 (축소 비율 반영)
+            if area < (20 * (curr_scale ** 2)):
                 continue
 
-            area = cv2.contourArea(cnt)
-            circularity = 4 * np.pi * (area / (perimeter * perimeter))
             (x, y), radius = cv2.minEnclosingCircle(cnt)
+            x_box, y_box, w_box, h_box = cv2.boundingRect(cnt)
 
-            if radius > min_radius and circularity > 0.6:
-                x_box, y_box, w_box, h_box = cv2.boundingRect(cnt)
-                detected_circles.append({
-                    "center": (x, y),
-                    "radius": radius,
-                    "bbox_scaled": (x_box, y_box, w_box, h_box),
-                    "scale_used": curr_scale
-                })
+            if radius >= min_radius:
+                # 종횡비(Aspect Ratio) 계산: 모션 블러로 찌그러진 공도 검출 허용 (0.3 ~ 3.0)
+                aspect_ratio = float(w_box) / h_box if h_box > 0 else 0
+                
+                if 0.3 <= aspect_ratio <= 3.0:
+                    # 검출 대상 중 면적이 가장 큰 유력 후보 1개만 기억
+                    if area > max_area:
+                        max_area = area
+                        best_candidate = {
+                            "center": (x, y),
+                            "radius": radius,
+                            "bbox_scaled": (x_box, y_box, w_box, h_box),
+                            "scale_used": curr_scale
+                        }
+
+        # 검출된 가장 큰 공 1개만 결과 리스트에 담기 (배경 잡음 박스 폭탄 방지)
+        if best_candidate is not None:
+            detected_circles.append(best_candidate)
 
         if timer:
             timer.stop("postprocess")
     else:
         # N-Frame Skip: 무거운 연산 건너뛰고 이전 검출 결과 그대로 사용
-        # [보완] last_results가 None일 경우 빈 리스트로 대치하여 TypeError 방지
         detected_circles = last_results if last_results is not None else []
 
     # -------------------------------------------------------------------------
@@ -371,7 +383,7 @@ def process_green_circle_v3(
 
     for item in detected_circles:
         scale = item.get("scale_used", 1.0)
-        inv_scale = 1.0 / scale
+        inv_scale = 1.0 / scale  # 원본 해상도 배율 복원 (예: 0.5 -> 2.0)
 
         cx = int(item["center"][0] * inv_scale)
         cy = int(item["center"][1] * inv_scale)
@@ -384,7 +396,7 @@ def process_green_circle_v3(
         cv2.circle(output_frame, (cx, cy), r, (0, 255, 0), 2)
         cv2.rectangle(output_frame, (xb, yb), (xb + wb, yb + hb), (0, 255, 255), 2)
         cv2.putText(
-            output_frame, "Green Circle (V3 Opt)", (xb, yb - 10),
+            output_frame, "Green Circle (V3 Opt)", (xb, max(20, yb - 10)),
             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2
         )
 

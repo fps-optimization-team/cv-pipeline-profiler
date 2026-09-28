@@ -48,9 +48,9 @@ BENCHMARK_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
 # ============================================================
 
 videos = {
-    "640x480": DATA_DIR / "sample_640x480.mp4",
-    "1280x720": DATA_DIR / "sample_1280x720.mp4",
-    "1920x1080": DATA_DIR / "sample_1920x1080.mp4"
+    "640x480": DATA_DIR / "tennis_sample_640x480.mp4",
+    "1280x720": DATA_DIR / "tennis_sample_1280x720.mp4",
+    "1920x1080": DATA_DIR / "tennis_sample_1920x1080.mp4"
 }
 
 

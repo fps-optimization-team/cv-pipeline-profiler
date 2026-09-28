@@ -196,7 +196,7 @@ if __name__ == "__main__":
     sample_path = str(
         PROJECT_ROOT
         / "data"
-        / "sample_1920x1080.mp4"
+        / "tennis_sample_1280x720.mp4"
     )
 
     config_path = str(
