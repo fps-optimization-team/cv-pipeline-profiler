@@ -37,11 +37,9 @@ RESULT_DIR.mkdir(exist_ok=True)
 
 
 # ============================================================
-# 4. 이번 벤치마크 실행 ID 생성
+# 4. 이번 벤치마크 ID
 # ============================================================
 
-# benchmark.py를 한 번 실행할 때 하나의 ID를 부여
-# 예: 20260928_113025
 BENCHMARK_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
@@ -57,7 +55,7 @@ videos = {
 
 
 # ============================================================
-# 6. 테스트할 파이프라인
+# 6. 테스트 파이프라인
 # ============================================================
 
 pipelines = {
@@ -68,14 +66,14 @@ pipelines = {
 
 
 # ============================================================
-# 7. 이번 벤치마크 결과 저장용 리스트
+# 7. 이번 실행 결과 저장
 # ============================================================
 
 results = []
 
 
 # ============================================================
-# 8. Benchmark
+# 8. Benchmark 실행
 # ============================================================
 
 for resolution, video_path in videos.items():
@@ -94,6 +92,7 @@ for resolution, video_path in videos.items():
             print("=" * 60)
 
             try:
+
                 # ------------------------------------------------
                 # 파이프라인 실행
                 # ------------------------------------------------
@@ -110,13 +109,12 @@ for resolution, video_path in videos.items():
 
                 if result is None:
                     raise ValueError(
-                        f"{version} 파이프라인의 반환값이 None입니다."
+                        f"{version} 파이프라인 반환값이 None입니다."
                     )
 
                 if "fps" not in result:
                     raise KeyError(
-                        f"{version} 파이프라인 결과에 "
-                        "'fps' 값이 없습니다."
+                        f"{version} 결과에 'fps'가 없습니다."
                     )
 
                 fps = result["fps"]
@@ -146,8 +144,9 @@ for resolution, video_path in videos.items():
                     f"FPS: {fps:.2f}"
                 )
 
+
             # ====================================================
-            # 사용자가 Ctrl + C로 중단한 경우
+            # Ctrl + C
             # ====================================================
 
             except KeyboardInterrupt:
@@ -168,12 +167,11 @@ for resolution, video_path in videos.items():
                     "error": "KeyboardInterrupt"
                 })
 
-                # Ctrl + C는 전체 벤치마크 중단
                 raise
 
 
             # ====================================================
-            # 그 외 오류 발생
+            # 일반 오류
             # ====================================================
 
             except Exception as e:
@@ -193,7 +191,6 @@ for resolution, video_path in videos.items():
                     f"원인: {error_message}"
                 )
 
-                # 실패한 테스트도 결과에 저장
                 results.append({
                     "benchmark_id": BENCHMARK_ID,
                     "timestamp": datetime.now().strftime(
@@ -207,35 +204,31 @@ for resolution, video_path in videos.items():
                     "error": error_message
                 })
 
-                # 여기서 프로그램을 종료하지 않고
-                # 다음 테스트로 계속 진행
                 continue
 
 
 # ============================================================
-# 9. 이번 실행 결과 DataFrame 생성
+# 9. 이번 실행 결과 DataFrame
 # ============================================================
 
 df = pd.DataFrame(results)
 
 
 # ============================================================
-# 10. CSV 누적 저장
+# 10. 개별 Run CSV 누적 저장
 # ============================================================
 
 csv_path = RESULT_DIR / "fps_comparison_table.csv"
 
-
-# 기존 CSV가 존재하면 기존 기록을 불러옴
 if csv_path.exists():
 
     try:
+
         old_df = pd.read_csv(
             csv_path,
             encoding="utf-8-sig"
         )
 
-        # 기존 기록 + 이번 실행 기록
         all_df = pd.concat(
             [old_df, df],
             ignore_index=True
@@ -244,42 +237,29 @@ if csv_path.exists():
     except Exception as e:
 
         print()
-        print(
-            "[WARNING] 기존 CSV를 읽는 중 "
-            "문제가 발생했습니다."
-        )
-
-        print(
-            f"원인: {type(e).__name__}: {e}"
-        )
-
-        print(
-            "이번 벤치마크 결과만 저장합니다."
-        )
+        print("[WARNING] 기존 CSV 읽기 실패")
+        print(f"원인: {type(e).__name__}: {e}")
 
         all_df = df.copy()
 
 else:
 
-    # 처음 실행하는 경우
     all_df = df.copy()
 
 
-# 누적된 전체 기록 저장
 all_df.to_csv(
     csv_path,
     index=False,
     encoding="utf-8-sig"
 )
 
-
 print()
-print("CSV 누적 저장 완료:")
+print("개별 Run CSV 누적 저장 완료:")
 print(csv_path)
 
 
 # ============================================================
-# 11. 이번 실행에서 성공한 데이터만 추출
+# 11. 성공한 데이터만 사용
 # ============================================================
 
 success_df = df[
@@ -288,48 +268,274 @@ success_df = df[
 
 
 # ============================================================
-# 12. 평균 FPS 계산
+# 12. 평균 / 표준편차 계산
 # ============================================================
 
 if not success_df.empty:
 
-    avg_df = (
+    summary_df = (
         success_df
         .groupby(
             ["resolution", "version"]
         )["fps"]
-        .mean()
+        .agg(
+            mean_fps="mean",
+            std_fps="std",
+            run_count="count"
+        )
         .reset_index()
     )
 
+
+    # ========================================================
+    # 13. V1 대비 성능 향상률 계산
+    # ========================================================
+
+    # 각 해상도의 V1 평균 FPS 가져오기
+    v1_fps = (
+        summary_df[
+            summary_df["version"] == "V1"
+        ]
+        .set_index("resolution")["mean_fps"]
+    )
+
+
+    def calculate_improvement(row):
+
+        resolution = row["resolution"]
+
+        # 해당 해상도의 V1 결과가 없으면 계산 불가
+        if resolution not in v1_fps.index:
+            return None
+
+        baseline = v1_fps.loc[resolution]
+
+        if baseline == 0:
+            return None
+
+        return (
+            (row["mean_fps"] - baseline)
+            / baseline
+            * 100
+        )
+
+
+    summary_df["improvement_vs_v1_pct"] = (
+        summary_df.apply(
+            calculate_improvement,
+            axis=1
+        )
+    )
+
+
+    # 이번 벤치마크 ID와 시간도 기록
+    summary_df.insert(
+        0,
+        "benchmark_id",
+        BENCHMARK_ID
+    )
+
+    summary_df.insert(
+        1,
+        "timestamp",
+        datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+    )
+
+
+    # ========================================================
+    # 14. 이번 실행 결과 출력
+    # ========================================================
+
     print()
-    print("========== 이번 실행 평균 FPS ==========")
-    print(avg_df)
+    print("=" * 85)
+    print("이번 실행 FPS 요약")
+    print("=" * 85)
+
+    print(
+        summary_df[
+            [
+                "resolution",
+                "version",
+                "mean_fps",
+                "std_fps",
+                "improvement_vs_v1_pct"
+            ]
+        ].to_string(
+            index=False,
+            float_format=lambda x: f"{x:.2f}"
+        )
+    )
+
+    print("=" * 85)
 
 
     # ========================================================
-    # 13. 그래프 생성
+    # 15. 그래프용 요약 CSV 누적
     # ========================================================
 
-    pivot_df = avg_df.pivot(
-        index="resolution",
-        columns="version",
-        values="fps"
+    summary_csv_path = (
+        RESULT_DIR
+        / "fps_benchmark_summary.csv"
     )
 
-    pivot_df.plot(
-        kind="bar"
+    # 직전 데이터 확인을 위해
+    # 새 데이터를 합치기 전에 기존 파일을 읽음
+    previous_summary = None
+
+    if summary_csv_path.exists():
+
+        try:
+
+            old_summary_df = pd.read_csv(
+                summary_csv_path,
+                encoding="utf-8-sig"
+            )
+
+            # -----------------------------------------------
+            # 직전 benchmark_id 찾기
+            # -----------------------------------------------
+
+            if not old_summary_df.empty:
+
+                previous_id = (
+                    old_summary_df["benchmark_id"]
+                    .astype(str)
+                    .iloc[-1]
+                )
+
+                previous_summary = (
+                    old_summary_df[
+                        old_summary_df[
+                            "benchmark_id"
+                        ].astype(str) == previous_id
+                    ].copy()
+                )
+
+            # 기존 + 현재 요약 데이터
+            all_summary_df = pd.concat(
+                [
+                    old_summary_df,
+                    summary_df
+                ],
+                ignore_index=True
+            )
+
+        except Exception as e:
+
+            print()
+            print(
+                "[WARNING] 기존 Summary CSV "
+                "읽기 실패"
+            )
+
+            print(
+                f"원인: {type(e).__name__}: {e}"
+            )
+
+            all_summary_df = summary_df.copy()
+
+    else:
+
+        all_summary_df = summary_df.copy()
+
+
+    # 누적 저장
+    all_summary_df.to_csv(
+        summary_csv_path,
+        index=False,
+        encoding="utf-8-sig"
     )
 
-    plt.title("FPS Benchmark")
+    print()
+    print("벤치마크 요약 CSV 누적 저장 완료:")
+    print(summary_csv_path)
+
+
+    # ========================================================
+    # 16. 현재 vs 직전 벤치마크 그래프 생성
+    # ========================================================
+
+    current_graph_df = (
+        summary_df.pivot(
+            index="resolution",
+            columns="version",
+            values="mean_fps"
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # 이전 실행 결과가 있는 경우
+    # --------------------------------------------------------
+
+    if previous_summary is not None:
+
+        previous_graph_df = (
+            previous_summary.pivot(
+                index="resolution",
+                columns="version",
+                values="mean_fps"
+            )
+        )
+
+        # 그래프에서 현재/직전을 구분하기 위해 이름 변경
+        previous_graph_df.columns = [
+            f"{col}_Previous"
+            for col in previous_graph_df.columns
+        ]
+
+        current_graph_df.columns = [
+            f"{col}_Current"
+            for col in current_graph_df.columns
+        ]
+
+        graph_df = previous_graph_df.join(
+            current_graph_df,
+            how="outer"
+        )
+
+
+    # --------------------------------------------------------
+    # 첫 번째 벤치마크라 이전 기록이 없는 경우
+    # --------------------------------------------------------
+
+    else:
+
+        current_graph_df.columns = [
+            f"{col}_Current"
+            for col in current_graph_df.columns
+        ]
+
+        graph_df = current_graph_df
+
+
+    # ========================================================
+    # 17. 그래프 그리기
+    # ========================================================
+
+    graph_df.plot(
+        kind="bar",
+        figsize=(12, 6)
+    )
+
+    plt.title(
+        "FPS Benchmark - Current vs Previous"
+    )
+
     plt.xlabel("Resolution")
     plt.ylabel("Average FPS")
-    plt.xticks(rotation=0)
+
+    plt.xticks(
+        rotation=0
+    )
+
     plt.tight_layout()
 
 
     # ========================================================
-    # 14. 그래프 저장
+    # 18. 그래프 저장
     # ========================================================
 
     graph_path = (
@@ -345,7 +551,7 @@ if not success_df.empty:
     plt.close()
 
     print()
-    print("그래프 저장 완료:")
+    print("비교 그래프 저장 완료:")
     print(graph_path)
 
 
@@ -353,13 +559,13 @@ else:
 
     print()
     print(
-        "[WARNING] 이번 실행에서 성공한 테스트가 없어 "
-        "FPS 그래프를 생성하지 않았습니다."
+        "[WARNING] 성공한 테스트가 없어 "
+        "평균/표준편차/그래프를 생성하지 않았습니다."
     )
 
 
 # ============================================================
-# 15. 최종 벤치마크 요약
+# 19. 최종 벤치마크 요약
 # ============================================================
 
 success_count = len(
