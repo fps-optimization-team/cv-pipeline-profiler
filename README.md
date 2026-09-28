@@ -49,23 +49,62 @@
 
 ```text
 team_project/
-├── .gitignore               # Large media data, cache, and env configs
-├── check_env.py             # OpenCV-contrib and python version checker
-├── config.json              # Central parameter configuration
-├── README.md                # Project documentation & execution guide
-├── requirements.txt         # Dependencies specification
-├── data/                    # Video samples repository
+├── .gitignore                  # Large media data, cache, and env configs
+├── check_env.py                # OpenCV-contrib and Python version checker
+├── config.json                 # Central parameter configuration
+├── README.md                   # Project documentation & execution guide
+├── requirements.txt            # Dependencies specification
+│
+├── data/                       # Video samples repository
 │   ├── sample_640x480.mp4
 │   ├── sample_1280x720.mp4
 │   └── sample_1920x1080.mp4
-├── docs/                    # Team reports & checklists
+│
+├── docs/                       # Team reports & checklists
 │   └── optimization_checklist.md
-├── results/                 # Benchmarking output repository
+│
+├── results/                    # Benchmarking output repository
 │   ├── fps_comparison_table.csv
+│   │   # 개별 Benchmark Run 결과 누적 저장
+│   │   # benchmark_id, timestamp, resolution, version, run,
+│   │   # fps, status, error 기록
+│   │   # 성공/실패/중단 기록을 모두 보존
+│   │
+│   ├── fps_benchmark_summary.csv
+│   │   # 벤치마크별 통계 및 그래프용 데이터 누적 저장
+│   │   # 평균 FPS(mean_fps), 표준편차(std_fps),
+│   │   # 실행 횟수(run_count), V1 대비 성능 향상률(%) 기록
+│   │
 │   └── fps_benchmark_graph.png
-└── src/                     # Core codebase
-    ├── utils.py             # Pipeline, timer, FPS meter, config helpers
-    ├── pipeline_v1.py       # Single-thread pipeline implementation
-    ├── pipeline_v2.py       # Multi-threaded queued pipeline
-    ├── pipeline_v3.py       # Optimized pipeline (UMat, ROI, Downscaling)
-    └── benchmark.py         # Automated matrix benchmark runner
+│       # 현재 Benchmark와 직전 Benchmark의
+│       # 평균 FPS 성능 비교 그래프
+│
+└── src/                        # Core codebase
+    ├── utils.py                # Pipeline, timer, FPS meter, config helpers
+    ├── pipeline_v1.py          # Single-thread baseline pipeline
+    ├── pipeline_v2.py          # Multi-threaded Producer-Queue-Consumer pipeline
+    ├── pipeline_v3.py          # Optimized pipeline
+    └── benchmark.py            # Automated benchmark runner
+```
+
+### Benchmark 결과 파일 설명
+
+`results/` 폴더에는 벤치마크 실행 결과가 자동으로 저장되며, 이전 실행 결과를 삭제하지 않고 누적하여 성능 변화를 추적할 수 있도록 구성합니다.
+
+- **`fps_comparison_table.csv`**
+  - 각 파이프라인의 개별 실행(Run) 결과를 저장합니다.
+  - 각 Benchmark 실행마다 고유한 `benchmark_id`와 `timestamp`를 기록합니다.
+  - 해상도(`resolution`), 파이프라인 버전(`version`), 실행 번호(`run`), FPS를 저장합니다.
+  - 정상 실행뿐만 아니라 `SUCCESS`, `ERROR`, `INTERRUPTED` 상태와 오류 원인도 함께 기록하여 실패 이력을 보존합니다.
+
+- **`fps_benchmark_summary.csv`**
+  - 개별 실행 데이터를 기반으로 계산한 벤치마크 통계 결과를 저장합니다.
+  - 해상도 및 파이프라인 버전별 평균 FPS(`mean_fps`)와 표준편차(`std_fps`)를 기록합니다.
+  - 실제 통계 계산에 사용된 실행 횟수(`run_count`)를 기록합니다.
+  - V1을 Baseline으로 하여 V2와 V3의 FPS 성능 향상률(`improvement_vs_v1_pct`)을 계산합니다.
+  - 새로운 Benchmark 실행 결과를 기존 데이터에 누적하여 과거 성능 변화를 추적할 수 있도록 합니다.
+
+- **`fps_benchmark_graph.png`**
+  - `fps_benchmark_summary.csv`의 데이터를 이용하여 생성합니다.
+  - 현재 Benchmark의 평균 FPS와 직전 Benchmark의 평균 FPS를 비교합니다.
+  - 해상도별 V1, V2, V3의 성능 변화를 시각적으로 확인할 수 있도록 합니다.
