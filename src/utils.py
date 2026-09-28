@@ -120,6 +120,7 @@ def process_green_circle(frame, config, timer=None):
     """
     [비전 연산 핵심 파이프라인]
     입력 프레임에서 초록색 원을 검출하고 Bounding Box 및 텍스트를 렌더링합니다.
+    (모션 블러 완화 및 해상도 대응 스케일링 보완)
     
     :param frame: 입력 BGR 이미지 (numpy ndarray)
     :param config: 설정값 사전 (config.json 데이터)
@@ -191,28 +192,35 @@ def process_green_circle(frame, config, timer=None):
         
     # 원본 이미지 훼손 방지를 위해 복사본 생성
     output_frame = frame.copy()
+    h_img, w_img = frame.shape[:2]
     
-    # 판단 기준 최소 반지름 (기본값: 10픽셀)
-    min_radius = config.get("min_radius", 10)
+    # 기준 해상도(1080p 기준 너비 1920) 대비 비율 계산 (해상도 변경에 대응)
+    scale_ratio = w_img / 1920.0 if w_img > 0 else 1.0
+    
+    # 판단 기준 최소 반지름 (640x480 등 낮은 해상도에서도 놓치지 않도록 동적 스케일 적용)
+    base_min_radius = config.get("min_radius", 10)
+    min_radius = max(5, int(base_min_radius * scale_ratio))
     
     # 검출된 모든 외곽선(Contour) 후보군 순회
     for cnt in contours:
-        # 외곽선 둘레 길이 계산
-        perimeter = cv2.arcLength(cnt, True)
-        if perimeter == 0:
-            continue
-            
         # 외곽선 내부 면적 계산
         area = cv2.contourArea(cnt)
         
-        # 원형도(Circularity) 계산 공식: 4 * pi * 면적 / (둘레^2) -> 완벽한 원일 때 1.0
-        circularity = 4 * np.pi * (area / (perimeter * perimeter))
-        
+        # 해상도 스케일에 맞춘 최소 면적 필터링 (너무 작은 점 노이즈 제거)
+        if area < (15 * (scale_ratio ** 2)):
+            continue
+            
         # 최소 외접원 계산 (중심 좌표 x, y 및 반지름 radius)
         (x, y), radius = cv2.minEnclosingCircle(cnt)
         
-        # 조건 검증: 반지름 기준값 이상 + 원형도 0.6 이상인 경우만 '원'으로 인식
-        if radius > min_radius and circularity > 0.6:
+        # Bounding Box 좌표 계산
+        x_box, y_box, w_box, h_box = cv2.boundingRect(cnt)
+        
+        # 종횡비(Aspect Ratio) 계산: 모션 블러로 찌그러진 공도 검출 허용 (0.3 ~ 3.0)
+        aspect_ratio = float(w_box) / h_box if h_box > 0 else 0
+        
+        # 조건 검증: 동적 반지름 기준값 이상 + 종횡비 조건 충족 시 '원'으로 인식 (엄격한 circularity 조건 완화)
+        if radius >= min_radius and (0.3 <= aspect_ratio <= 3.0):
             center = (int(x), int(y))
             radius = int(radius)
             
@@ -220,11 +228,10 @@ def process_green_circle(frame, config, timer=None):
             cv2.circle(output_frame, center, radius, (0, 255, 0), 2)
             
             # 2) Bounding Box 좌표 계산 및 직사각형 그리기 (노란색, 두께 2)
-            x_box, y_box, w_box, h_box = cv2.boundingRect(cnt)
             cv2.rectangle(output_frame, (x_box, y_box), (x_box + w_box, y_box + h_box), (0, 255, 255), 2)
             
-            # 3) 상단에 라벨 텍스트 표기
-            cv2.putText(output_frame, "Green Circle", (x_box, y_box - 10),
+            # 3) 상단에 라벨 텍스트 표기 (화면 상단 이탈 방지를 위한 y좌표 clamp 적용)
+            cv2.putText(output_frame, "Green Circle", (x_box, max(20, y_box - 10)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             
     if timer:
