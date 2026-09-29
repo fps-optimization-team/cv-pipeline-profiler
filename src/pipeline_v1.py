@@ -82,6 +82,7 @@ def run_pipeline_v1(video_source=0, config_path="config.json", show_window=True)
 
 if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
-    sample_path = str(project_root / "data" / "tennis_sample_640x480.mp4")
+    # samples/ 폴더 경로로 변경
+    sample_path = str(project_root / "data" / "samples" / "tennis_sample_640x480.mp4")
     config_path = str(project_root / "config.json")
     run_pipeline_v1(sample_path, config_path=config_path, show_window=True)

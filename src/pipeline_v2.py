@@ -192,12 +192,18 @@ def run_pipeline_v2(
 # =============================================================================
 
 if __name__ == "__main__":
+<<<<<<< Updated upstream
 
     sample_path = str(
         PROJECT_ROOT
         / "data"
         / "tennis_sample_1280x720.mp4"
     )
+=======
+    sample_path = str(PROJECT_ROOT / "data" / "samples" / "tennis_sample_1280x720.mp4")
+    config_path = str(PROJECT_ROOT / "config.json")
+    run_pipeline_v2(sample_path, config_path=config_path, show_window=True)
+>>>>>>> Stashed changes
 
     config_path = str(
         PROJECT_ROOT
