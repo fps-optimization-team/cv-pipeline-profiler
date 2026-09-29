@@ -97,6 +97,6 @@ def run_pipeline_v3(video_source=0, config_path="config.json", show_window=True)
     }
 
 if __name__ == "__main__":
-    sample_path = str(PROJECT_ROOT / "data" / "tennis_sample_1920x1080.mp4")
+    sample_path = str(PROJECT_ROOT / "data" / "samples" / "tennis_sample_1920x1080.mp4")
     config_path = str(PROJECT_ROOT / "config.json")
     run_pipeline_v3(sample_path, config_path=config_path, show_window=True)

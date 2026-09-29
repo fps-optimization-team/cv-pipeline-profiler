@@ -8,13 +8,13 @@ def generate_samples(input_filename: str = "origin_tenis_sample_1920x1080.mp4") 
     input_path = DATA_DIR / input_filename
 
     if not input_path.exists():
-        print(f"❌ [오류] 원본 파일이 없습니다: {input_path}")
+        print(f"[오류] 원본 파일이 없습니다: {input_path}")
         return
 
     # 1. 원본 영상을 읽어 메모리(리스트)에 사전 저장
     cap = cv2.VideoCapture(str(input_path))
     if not cap.isOpened():
-        print(f"❌ [오류] 영상을 열 수 없습니다: {input_path}")
+        print(f"[오류] 영상을 열 수 없습니다: {input_path}")
         return
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -28,7 +28,7 @@ def generate_samples(input_filename: str = "origin_tenis_sample_1920x1080.mp4") 
     cap.release()
 
     if not frames:
-        print("❌ [오류] 영상에서 프레임을 읽어오지 못했습니다.")
+        print("[오류] 영상에서 프레임을 읽어오지 못했습니다.")
         return
 
     print(f"🎬 원본 로드 완료: 총 {len(frames)}프레임 | FPS: {fps:.1f}")
@@ -60,9 +60,9 @@ def generate_samples(input_filename: str = "origin_tenis_sample_1920x1080.mp4") 
 
         if output_path.exists() and output_path.stat().st_size > 0:
             file_size_mb = output_path.stat().st_size / (1024 * 1024)
-            print(f"  └ ✅ 저장 완료! (총 {total_written_frames} 프레임 | 용량: {file_size_mb:.2f} MB)")
+            print(f"  └ 저장 완료! (총 {total_written_frames} 프레임 | 용량: {file_size_mb:.2f} MB)")
 
-    print("\n🎉 모든 샘플 영상이 정상적으로 생성되었습니다!")
+    print("\n모든 샘플 영상이 정상적으로 생성되었습니다!")
 
 if __name__ == "__main__":
     generate_samples(input_filename="origin_tenis_sample_1920x1080.mp4")
