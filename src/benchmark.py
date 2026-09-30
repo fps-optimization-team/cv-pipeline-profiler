@@ -41,9 +41,9 @@ RESULT_DIR.mkdir(exist_ok=True)
 # ============================================================
 
 VIDEOS = {
-    "640x480": DATA_DIR / "tennis_sample_640x480.mp4",
-    "1280x720": DATA_DIR / "tennis_sample_1280x720.mp4",
-    "1920x1080": DATA_DIR / "tennis_sample_1920x1080.mp4"
+    "640x480": DATA_DIR / "samples"/ "tennis_sample_640x480.mp4",
+    "1280x720": DATA_DIR / "samples"/ "tennis_sample_1280x720.mp4",
+    "1920x1080": DATA_DIR / "samples"/ "tennis_sample_1920x1080.mp4"
 }
 
 
@@ -748,10 +748,10 @@ def print_final_result(
 
 
 # ============================================================
-# 함수 12. main
+# 함수 12. run_full_benchmark
 # ============================================================
 
-def main():
+def run_full_benchmark():
 
     # --------------------------------------------------------
     # 1. Benchmark ID 생성
@@ -850,4 +850,4 @@ def main():
 
 if __name__ == "__main__":
 
-    main()
+    run_full_benchmark()
