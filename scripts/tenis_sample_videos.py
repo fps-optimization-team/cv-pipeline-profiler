@@ -3,8 +3,8 @@ import cv2
 from pathlib import Path
 
 def generate_samples(input_filename: str = "origin_tenis_sample_1920x1080.mp4") -> None:
-    BASE_DIR = Path(__file__).resolve().parent
-    DATA_DIR = BASE_DIR / "data"
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    DATA_DIR = BASE_DIR / "data" / "samples"
     input_path = DATA_DIR / input_filename
 
     if not input_path.exists():
