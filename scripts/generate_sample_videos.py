@@ -12,7 +12,9 @@ import numpy as np
 
 def create_sample_videos():
     # 1. 영상 저장 폴더 생성
-    data_dir = "data"
+    # 현재 실행 중인 파이썬 파일의 위치를 기준으로 절대 경로 생성
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(BASE_DIR,"../" ,"data", "samples")
     os.makedirs(data_dir, exist_ok=True)
 
     # 2. 테스트할 3가지 해상도 규격 정의 (가로, 세로)
