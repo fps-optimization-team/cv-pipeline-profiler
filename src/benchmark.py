@@ -850,4 +850,4 @@ def run_full_benchmark():
 
 if __name__ == "__main__":
 
-    main()
+    run_full_benchmark()
