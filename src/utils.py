@@ -247,498 +247,210 @@ def process_green_circle_v3(
     frame_idx=0,
     last_results=None,
 
-    # ---------------------------------------------------------
-    # [최적화 기법 5가지 ON/OFF 스위치 및 파라미터]
-    # ---------------------------------------------------------
-    use_downscale=True,      # [기법 1] 작은 해상도에서 처리
+    # [최적화 옵션 스위치]
+    use_downscale=True,      # 다운스케일링
     scale_factor=0.5,        # 축소 비율
-    use_fast_interp=True,    # [기법 2] INTER_NEAREST 사용
-    use_frame_skip=True,     # [기법 3] N-Frame Skip
-    skip_interval=2,         # 2프레임마다 1번 검출
-    use_roi=True,            # [기법 4] ROI 처리
-    use_umat=True           # [기법 5] cv2.UMat(OpenCL) 사용
+    use_fast_interp=True,    # INTER_NEAREST 보간법
+    use_frame_skip=True,     # N-Frame Skip
+    skip_interval=2,         # N프레임 간격
+    use_roi=True,            # ROI 처리
+    use_umat=False           # UMat 사용 여부 (성능 저하로 기본 False 권장)
 ):
     """
-    [V3 스위치형 최적화 비전 연산 파이프라인]
-
-    최적화 기법
-    1. Downscaling
-    2. INTER_NEAREST
-    3. N-Frame Skip
-    4. ROI
-    5. cv2.UMat / OpenCL
-
-    각 기능을 True / False로 변경하여
-    단독 또는 조합 벤치마크를 수행할 수 있다.
+    [V3 구조 최적화 완료 파이프라인]
+    1. 최상단 N-Frame Skip 판단 (불필요한 Resize/전처리 자체를 스킵)
+    2. 검출 대상 프레임에 대해서만 Downscaling 적용
+    3. ROI 영역을 먼저 Crop하여 최단 크기 이미지로 블러/HSV 전처리 수행
     """
-
+    
     # ============================================================
-    # Phase 1. 전처리
+    # [최적화 1] 최상단 N-Frame Skip 판단 (가장 빠른 탈출 경로)
     # ============================================================
-
-    if timer:
-        timer.start("preprocess")
-
-    # ------------------------------------------------------------
-    # [최적화 1 & 2]
-    # Downscaling + 빠른 보간법
-    # ------------------------------------------------------------
-
-    if use_downscale and scale_factor < 1.0:
-
-        interp = (
-            cv2.INTER_NEAREST
-            if use_fast_interp
-            else cv2.INTER_LINEAR
-        )
-
-        proc_frame = cv2.resize(
-            frame,
-            (0, 0),
-            fx=scale_factor,
-            fy=scale_factor,
-            interpolation=interp
-        )
-
-        curr_scale = scale_factor
-
-    else:
-        proc_frame = frame
-        curr_scale = 1.0
-
-    blur_kernel = tuple(
-        config.get("blur_kernel", [5, 5])
-    )
-
-    # ------------------------------------------------------------
-    # [최적화 5]
-    # cv2.UMat(OpenCL) 사용
-    # ------------------------------------------------------------
-
-    if use_umat:
-
-        # numpy ndarray → UMat
-        work_frame = cv2.UMat(proc_frame)
-
-        # UMat 상태에서 OpenCV 연산 수행
-        blurred = cv2.GaussianBlur(
-            work_frame,
-            blur_kernel,
-            0
-        )
-
-        hsv = cv2.cvtColor(
-            blurred,
-            cv2.COLOR_BGR2HSV
-        )
-
-    else:
-
-        # 기존 CPU / NumPy 방식
-        blurred = cv2.GaussianBlur(
-            proc_frame,
-            blur_kernel,
-            0
-        )
-
-        hsv = cv2.cvtColor(
-            blurred,
-            cv2.COLOR_BGR2HSV
-        )
-
-    if timer:
-        timer.stop("preprocess")
-
-
-    # ============================================================
-    # [최적화 3]
-    # N-Frame Skip
-    # ============================================================
-
     if use_frame_skip:
-
         should_detect = (
             frame_idx % skip_interval == 0
             or last_results is None
             or len(last_results) == 0
         )
-
     else:
         should_detect = True
 
-    detected_circles = []
+    # ------------------------------------------------------------
+    # A. Skip 대상 프레임: 이전 결과 재사용 후 즉시 렌더링 단계로 탈출
+    # ------------------------------------------------------------
+    if not should_detect:
+        detected_circles = last_results if last_results is not None else []
+        
+        if timer:
+            timer.start("draw")
+            
+        output_frame = frame.copy()
+        for item in detected_circles:
+            scale = item.get("scale_used", 1.0)
+            inv_scale = 1.0 / scale
 
+            cx = int(item["center"][0] * inv_scale)
+            cy = int(item["center"][1] * inv_scale)
+            r = int(item["radius"] * inv_scale)
+            xb, yb, wb, hb = item["bbox_scaled"]
+            xb, yb, wb, hb = int(xb * inv_scale), int(yb * inv_scale), int(wb * inv_scale), int(hb * inv_scale)
+
+            cv2.circle(output_frame, (cx, cy), r, (0, 255, 0), 2)
+            cv2.rectangle(output_frame, (xb, yb), (xb + wb, yb + hb), (0, 255, 255), 2)
+            cv2.putText(output_frame, "Green Circle (V3 Opt)", (xb, max(20, yb - 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            
+        if timer:
+            timer.stop("draw")
+            
+        return output_frame, detected_circles
 
     # ============================================================
-    # 검출 수행
+    # B. Detection 실행 프레임
     # ============================================================
-
-    if should_detect:
-
-        # ========================================================
-        # Phase 2. Detection
-        # ========================================================
-
-        if timer:
-            timer.start("detection")
-
-        lower_green = np.array(
-            config.get(
-                "lower_green",
-                [35, 100, 100]
-            )
-        )
-
-        upper_green = np.array(
-            config.get(
-                "upper_green",
-                [85, 255, 255]
-            )
-        )
-
-        # --------------------------------------------------------
-        # [최적화 4] ROI
-        # --------------------------------------------------------
-
-        if (
-            use_roi
-            and last_results
-            and len(last_results) > 0
-        ):
-
-            xb, yb, wb, hb = (
-                last_results[0]["bbox_scaled"]
-            )
-
-            margin = int(
-                80 * curr_scale
-            )
-
-            # UMat은 shape를 직접 사용하기 불편하므로
-            # 현재 처리 프레임의 크기를 사용
-            h_img, w_img = proc_frame.shape[:2]
-
-            x1 = max(
-                0,
-                xb - margin
-            )
-
-            y1 = max(
-                0,
-                yb - margin
-            )
-
-            x2 = min(
-                w_img,
-                xb + wb + margin
-            )
-
-            y2 = min(
-                h_img,
-                yb + hb + margin
-            )
-
-            # ----------------------------------------------------
-            # ROI + UMat
-            # ----------------------------------------------------
-
-            if use_umat:
-
-                # ROI 좌표만 NumPy에서 결정한 뒤
-                # 해당 영역을 UMat으로 변환
-                roi_frame = proc_frame[
-                    y1:y2,
-                    x1:x2
-                ]
-
-                roi_umat = cv2.UMat(
-                    roi_frame
-                )
-
-                roi_blurred = cv2.GaussianBlur(
-                    roi_umat,
-                    blur_kernel,
-                    0
-                )
-
-                roi_hsv = cv2.cvtColor(
-                    roi_blurred,
-                    cv2.COLOR_BGR2HSV
-                )
-
-                roi_mask = cv2.inRange(
-                    roi_hsv,
-                    lower_green,
-                    upper_green
-                )
-
-                # 후속 contour 처리를 위해
-                # NumPy 배열로 가져오기
-                roi_mask = roi_mask.get()
-
-            else:
-
-                roi_hsv = hsv[
-                    y1:y2,
-                    x1:x2
-                ]
-
-                roi_mask = cv2.inRange(
-                    roi_hsv,
-                    lower_green,
-                    upper_green
-                )
-
-            # 전체 크기의 빈 마스크 생성
-            mask = np.zeros(
-                (h_img, w_img),
-                dtype=np.uint8
-            )
-
-            mask[
-                y1:y2,
-                x1:x2
-            ] = roi_mask
-
-        else:
-
-            # ----------------------------------------------------
-            # 전체 화면 Detection
-            # ----------------------------------------------------
-
-            mask = cv2.inRange(
-                hsv,
-                lower_green,
-                upper_green
-            )
-
-            # UMat → NumPy
-            # findContours를 안정적으로 사용하기 위해 변환
-            if use_umat:
-                mask = mask.get()
-
-        if timer:
-            timer.stop("detection")
-
-
-        # ========================================================
-        # Phase 3. Post-processing
-        # ========================================================
-
-        if timer:
-            timer.start("postprocess")
-
-        morph_kernel_size = tuple(
-            config.get(
-                "morph_kernel",
-                [3, 3]
-            )
-        )
-
-        kernel = cv2.getStructuringElement(
-            cv2.MORPH_RECT,
-            morph_kernel_size
-        )
-
-        # --------------------------------------------------------
-        # UMat 사용 여부에 따라 Morphology 실행
-        # --------------------------------------------------------
-
-        if use_umat:
-
-            mask_umat = cv2.UMat(mask)
-
-            mask_umat = cv2.morphologyEx(
-                mask_umat,
-                cv2.MORPH_OPEN,
-                kernel
-            )
-
-            mask_umat = cv2.morphologyEx(
-                mask_umat,
-                cv2.MORPH_CLOSE,
-                kernel
-            )
-
-            # Contour 처리를 위해 다시 NumPy로 변환
-            mask = mask_umat.get()
-
-        else:
-
-            mask = cv2.morphologyEx(
-                mask,
-                cv2.MORPH_OPEN,
-                kernel
-            )
-
-            mask = cv2.morphologyEx(
-                mask,
-                cv2.MORPH_CLOSE,
-                kernel
-            )
-
-        contours, _ = cv2.findContours(
-            mask,
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE
-        )
-
-        min_radius = (
-            config.get("min_radius", 10)
-            * curr_scale
-        )
-
-        best_candidate = None
-        max_area = 0
-
-        # --------------------------------------------------------
-        # 가장 가능성 높은 공 후보 탐색
-        # --------------------------------------------------------
-
-        for cnt in contours:
-
-            area = cv2.contourArea(cnt)
-
-            # 작은 노이즈 제거
-            if area < (
-                20 * (curr_scale ** 2)
-            ):
-                continue
-
-            (x, y), radius = (
-                cv2.minEnclosingCircle(cnt)
-            )
-
-            x_box, y_box, w_box, h_box = (
-                cv2.boundingRect(cnt)
-            )
-
-            if radius >= min_radius:
-
-                # 모션 블러로 찌그러진 공 허용
-                aspect_ratio = (
-                    float(w_box) / h_box
-                    if h_box > 0
-                    else 0
-                )
-
-                if 0.3 <= aspect_ratio <= 3.0:
-
-                    # 가장 큰 후보 1개 선택
-                    if area > max_area:
-
-                        max_area = area
-
-                        best_candidate = {
-                            "center": (x, y),
-                            "radius": radius,
-                            "bbox_scaled": (
-                                x_box,
-                                y_box,
-                                w_box,
-                                h_box
-                            ),
-                            "scale_used": curr_scale
-                        }
-
-        if best_candidate is not None:
-            detected_circles.append(
-                best_candidate
-            )
-
-        if timer:
-            timer.stop("postprocess")
-
+    
+    # ------------------------------------------------------------
+    # [최적화 2] 다운스케일링 & 빠른 보간법
+    # ------------------------------------------------------------
+    if timer:
+        timer.start("preprocess")
+
+    if use_downscale and scale_factor < 1.0:
+        interp = cv2.INTER_NEAREST if use_fast_interp else cv2.INTER_LINEAR
+        proc_frame = cv2.resize(frame, (0, 0), fx=scale_factor, fy=scale_factor, interpolation=interp)
+        curr_scale = scale_factor
     else:
+        proc_frame = frame
+        curr_scale = 1.0
 
-        # --------------------------------------------------------
-        # N-Frame Skip
-        # 이전 검출 결과 재사용
-        # --------------------------------------------------------
+    blur_kernel = tuple(config.get("blur_kernel", [5, 5]))
+    lower_green = np.array(config.get("lower_green", [35, 100, 100]))
+    upper_green = np.array(config.get("upper_green", [85, 255, 255]))
 
-        detected_circles = (
-            last_results
-            if last_results is not None
-            else []
-        )
+    h_img, w_img = proc_frame.shape[:2]
+    
+    # ------------------------------------------------------------
+    # [최적화 3] ROI 선(先) 잘라내기 후 전처리 (Blur / HSV)
+    # ------------------------------------------------------------
+    has_roi = False
+    if use_roi and last_results and len(last_results) > 0:
+        xb, yb, wb, hb = last_results[0]["bbox_scaled"]
+        margin = int(80 * curr_scale)
 
+        x1 = max(0, xb - margin)
+        y1 = max(0, yb - margin)
+        x2 = min(w_img, xb + wb + margin)
+        y2 = min(h_img, yb + hb + margin)
 
-    # ============================================================
+        # 박스가 유효한 크기인지 확인
+        if (x2 - x1) > 0 and (y2 - y1) > 0:
+            roi_crop = proc_frame[y1:y2, x1:x2]
+            has_roi = True
+
+    # ROI 추출 실패 또는 초기 프레임인 경우 전체 프레임 사용
+    if not has_roi:
+        roi_crop = proc_frame
+        x1, y1 = 0, 0
+
+    # 잘라낸 구역(ROI 영역 또는 전체)에 대해서만 블러 및 HSV 변환 수행
+    if use_umat:
+        roi_umat = cv2.UMat(roi_crop)
+        blurred_roi = cv2.GaussianBlur(roi_umat, blur_kernel, 0)
+        hsv_roi = cv2.cvtColor(blurred_roi, cv2.COLOR_BGR2HSV)
+        mask_roi = cv2.inRange(hsv_roi, lower_green, upper_green)
+        mask_roi = mask_roi.get()
+    else:
+        blurred_roi = cv2.GaussianBlur(roi_crop, blur_kernel, 0)
+        hsv_roi = cv2.cvtColor(blurred_roi, cv2.COLOR_BGR2HSV)
+        mask_roi = cv2.inRange(hsv_roi, lower_green, upper_green)
+
+    if timer:
+        timer.stop("preprocess")
+
+    # ------------------------------------------------------------
+    # Phase 2 & 3. Detection & Post-processing
+    # ------------------------------------------------------------
+    if timer:
+        timer.start("detection")
+
+    # 전체 영역 마스크로 복원 (ROI 좌표계 -> 전체 축소 좌표계)
+    if has_roi:
+        mask = np.zeros((h_img, w_img), dtype=np.uint8)
+        mask[y1:y2, x1:x2] = mask_roi
+    else:
+        mask = mask_roi
+
+    if timer:
+        timer.stop("detection")
+
+    if timer:
+        timer.start("postprocess")
+
+    morph_kernel_size = tuple(config.get("morph_kernel", [3, 3]))
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, morph_kernel_size)
+
+    if use_umat:
+        mask_umat = cv2.UMat(mask)
+        mask_umat = cv2.morphologyEx(mask_umat, cv2.MORPH_OPEN, kernel)
+        mask_umat = cv2.morphologyEx(mask_umat, cv2.MORPH_CLOSE, kernel)
+        mask = mask_umat.get()
+    else:
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    min_radius = config.get("min_radius", 10) * curr_scale
+    best_candidate = None
+    max_area = 0
+
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < (20 * (curr_scale ** 2)):
+            continue
+
+        (x, y), radius = cv2.minEnclosingCircle(cnt)
+        x_box, y_box, w_box, h_box = cv2.boundingRect(cnt)
+
+        if radius >= min_radius:
+            aspect_ratio = float(w_box) / h_box if h_box > 0 else 0
+            if 0.3 <= aspect_ratio <= 3.0:
+                if area > max_area:
+                    max_area = area
+                    best_candidate = {
+                        "center": (x, y),
+                        "radius": radius,
+                        "bbox_scaled": (x_box, y_box, w_box, h_box),
+                        "scale_used": curr_scale
+                    }
+
+    detected_circles = [best_candidate] if best_candidate is not None else []
+
+    if timer:
+        timer.stop("postprocess")
+
+    # ------------------------------------------------------------
     # Phase 4. Rendering
-    # ============================================================
-
+    # ------------------------------------------------------------
     if timer:
         timer.start("draw")
 
-    # 원본 영상에 결과 표시
     output_frame = frame.copy()
-
     for item in detected_circles:
-
-        scale = item.get(
-            "scale_used",
-            1.0
-        )
-
+        scale = item.get("scale_used", 1.0)
         inv_scale = 1.0 / scale
 
-        # 중심 좌표 원본 크기로 복원
-        cx = int(
-            item["center"][0]
-            * inv_scale
-        )
+        cx = int(item["center"][0] * inv_scale)
+        cy = int(item["center"][1] * inv_scale)
+        r = int(item["radius"] * inv_scale)
 
-        cy = int(
-            item["center"][1]
-            * inv_scale
-        )
+        xb, yb, wb, hb = item["bbox_scaled"]
+        xb, yb, wb, hb = int(xb * inv_scale), int(yb * inv_scale), int(wb * inv_scale), int(hb * inv_scale)
 
-        r = int(
-            item["radius"]
-            * inv_scale
-        )
-
-        # Bounding Box 원본 크기로 복원
-        xb, yb, wb, hb = (
-            item["bbox_scaled"]
-        )
-
-        xb = int(xb * inv_scale)
-        yb = int(yb * inv_scale)
-        wb = int(wb * inv_scale)
-        hb = int(hb * inv_scale)
-
-        # 원 표시
-        cv2.circle(
-            output_frame,
-            (cx, cy),
-            r,
-            (0, 255, 0),
-            2
-        )
-
-        # Bounding Box
-        cv2.rectangle(
-            output_frame,
-            (xb, yb),
-            (xb + wb, yb + hb),
-            (0, 255, 255),
-            2
-        )
-
-        # 라벨
-        cv2.putText(
-            output_frame,
-            "Green Circle (V3 Opt)",
-            (
-                xb,
-                max(20, yb - 10)
-            ),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (0, 255, 0),
-            2
-        )
+        cv2.circle(output_frame, (cx, cy), r, (0, 255, 0), 2)
+        cv2.rectangle(output_frame, (xb, yb), (xb + wb, yb + hb), (0, 255, 255), 2)
+        cv2.putText(output_frame, "Green Circle (V3 Opt)", (xb, max(20, yb - 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
     if timer:
         timer.stop("draw")
