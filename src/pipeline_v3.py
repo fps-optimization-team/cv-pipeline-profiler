@@ -49,7 +49,6 @@ def run_pipeline_v3(video_source=0, config_path="config.json", show_window=True)
                 frame_idx=frame_idx,
                 last_results=last_results,
                 scale_factor=0.5,
-                use_umat=False
             )
 
             # 실시간 FPS 갱신
